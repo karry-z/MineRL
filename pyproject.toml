@@ -1,0 +1,12 @@
+[project]
+name = "test-minerl"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "minerl",
+]
+
+[tool.uv.sources]
+minerl = { git = "https://github.com/minerllabs/minerl" }
