@@ -1,0 +1,392 @@
+buildscript {
+    repositories {
+        mavenLocal()
+
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        // Configure a custom proxy
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        mavenCentral()
+        maven { url = "https://maven.minecraftforge.net/" }
+        maven { url = "https://repo.spongepowered.org/maven/"}
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:4.1.10'
+        // classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '3.+', changing: true
+        // 22-05-2023 (Miffyli) Removed as not needed and failed the build // classpath group: 'org.spongepowered', name: 'mixingradle', version: '0.7-SNAPSHOT'
+        // classpath group: 'com.googlecode.mavennatives', name: 'maven-nativedependencies-plugin', version: '0.0.5'
+        classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.4'
+
+        // Add BINPATCHER dependency here so that it is downloaded through our proxy, otherwise the build fails when
+        // we remove the rogue repositories that get added by the MCForge plugin.
+        // public static final String BINPATCHER =  "net.minecraftforge:binarypatcher:1.+:fatjar";
+        classpath 'net.minecraftforge:binarypatcher:1.+:fatjar' // match version with what ForgeGradle specifies
+
+        configurations {
+        compileClasspath {
+            resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+                if (details.requested.group == 'org.apache.logging.log4j') {
+                    details.useVersion '2.17.1'
+                }
+            }
+        }
+    }
+    }
+}
+
+project.repositories.clear()
+repositories {
+    mavenCentral()
+    maven { url = "https://maven.minecraftforge.net/" }
+    maven { url = "https://repo.spongepowered.org/maven/"}
+}
+
+// apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'net.minecraftforge.gradle.forgedev.patcher'
+// 22-05-2023 (Miffyli) Removed as not needed and failed the build // apply plugin: 'org.spongepowered.mixin'
+// apply plugin: 'unpacknatives'
+
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+apply plugin: 'java'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Remove repositories that we proxy that have been added by plugins
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ext.print_project_repositories = { ->
+    project.repositories.each {
+        if (it.name.startsWith("BUNDELED")) {
+            println " | - " + it.name + " -> downloads to: " + it.root
+            // extra info:
+//            println "   | - " + it.repository
+//            println "   | - " + it.repository.provider
+//            println "   | - " + it.repository.provider.mapper
+//            println "   | - " + it.repository.provider.providers
+//            println "   | - " + it.root
+//            println "   | - " + it.cache
+        } else if (it instanceof MavenArtifactRepository) {
+            println " | - " + it.name + " -> " + it.url
+        } else {
+            println " | - " + it.name + " - " + it.class
+        }
+    }
+}
+
+println "* * * * * * * * * * * * * * * * * * * * * * * * "
+println "These are the repositories after plugins have been applied:"
+print_project_repositories()
+
+
+println "* * * * * * * * * * * * * * * * * * * * * * * * "
+println "Repositories after removing proxied repos:"
+print_project_repositories()
+println "* * * * * * * * * * * * * * * * * * * * * * * * "
+
+// this is an additional task that can be used for final debugging of repositories
+task listrepos {
+    doLast {
+        println "Repositories:"
+        print_project_repositories()
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// verifyRepos: Task that auto-runs before each other task and checks whether there are rogue repositories added
+// somewhere else in the code or by plugins.
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+task verifyRepos {
+    doLast {
+        boolean allReposOk = true;
+
+        // -- CHECK BUILD SCRIPT REPOS
+        /*
+        Note it is actually too late here to check the build script repos, since buildScript executes and applies
+        plugins immediately without having a hook in between to check for the repositories.
+            >> only buildscript {} and other plugins {} script blocks are allowed before plugins {} blocks, no
+            >> other statements are allowed.
+        However, we can still fail the build so that the user changes the configuration after 1 build that
+        leaked repositories during buildScript phase.
+         */
+        println "Checking BuildScript Repositories:"
+        project.buildscript.repositories.each {
+            if (it.name.contains("Gradle Central Plugin Repository")) {
+                // gradle plugins is ok
+                println " | - [ OK ]: " + it.name + " -> (Plugins)";
+                return
+            } else if (it instanceof MavenArtifactRepository) {
+                if (it.url.toString().startsWith("file:")) { // maybe there's a better way to check for file URI
+                    // maven repo pointing to local file
+                    println " | - [ OK ]: " + it.name + " -> " + it.url;
+                    return
+                }
+            }
+
+            // if we get here, this is not an accepted repository
+            if (it instanceof MavenArtifactRepository) {
+                println " | - [FAIL]: " + it.name + " -> " + it.url;
+            } else if (it instanceof FlatDirectoryArtifactRepository)
+                println " | - [FAIL]: " + it.name + " -> " + it.dirs;
+            else {
+                println " | - [FAIL]: " + it.name + "?" + it.class
+            }
+            // allReposOk = false
+        }
+
+        // -- CHECK PROJECT REPOS
+        println "Checking Project Repositories:"
+        project.repositories.each {
+            if (it instanceof MavenArtifactRepository) {
+                if (it.url.toString().startsWith("file:")) { // maybe there's a better way to check for file URI
+                    // maven repo pointing to local file
+                    println " | - [ OK ]: " + it.name + " -> " + it.url;
+                    return
+                }
+            } else if (it instanceof FlatDirectoryArtifactRepository) {
+                // directories are ok
+                println " | - [ OK ]: " + it.name + " -> " + it.dirs;
+                return
+            } else if (it.name.startsWith("BUNDELED_")) {
+                // we whitelist this repository because it is not easily proxyable
+                println " | - [ OK ]: " + it.name + " (accepted custom MC repo) ";
+                return
+            }
+
+            // if we get here, this is not an accepted repository
+            if (it instanceof MavenArtifactRepository) {
+                println " | - [FAIL]: " + it.name + " -> " + it.url;
+            } else {
+                println " | - [FAIL]: " + it.name + " ? " + it.class;
+            }
+            // allReposOk = false
+        }
+
+        if (!allReposOk) {
+            throw new GradleException("Some repositories were not accepted. This typically means you bypassed the proxy.")
+        }
+    }
+}
+
+// add `verifyRepos` as a dependency for all other tasks, so that it always executes first
+project.tasks.each {
+    if (it != verifyRepos) {
+        it.dependsOn(verifyRepos)
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+//
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+configurations {
+    shade
+    compile.extendsFrom shade
+}
+
+group = 'me.yourname'
+version = '6.13'
+
+/* // 22-05-2023 (Miffyli) Removed as not needed and failed the build // mixin {
+    add sourceSets.main, "modid.refmap.json"
+}*/
+
+ext {
+    minecraft_version = '1.16.5'
+    mcp_version = '20210115.111550'
+    mappings_channel = 'snapshot'
+    mappings_version = '20201028-1.16.3'
+}
+
+
+dependencies {
+    shade 'net.minecraftforge:forgespi:3.0.+'
+//    Use the shade to add the lib to the jar
+//    or use compile if you want to load the lib from the version.json
+//    from a maven repo
+//    shade 'package-here'
+//    compile 'package-here'
+    compile group: 'com.google.code.gson', name: 'gson', version: '2.8.5'
+    // compile 'org.spongepowered:mixin:0.7.5-SNAPSHOT'
+    compile group: 'org.openpnp', name: 'opencv', version: '3.4.2-0'
+    compile group: 'com.microsoft.azure', name: 'azure-storage', version: '8.6.5'
+
+    // specify lwjgl deps explicitly to force the download of natives for all 
+    // platforms
+    compile group: 'org.lwjgl', name: 'lwjgl', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-glfw', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-glfw', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-glfw', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-jemalloc', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-jemalloc', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-jemalloc', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-openal', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-openal', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-openal', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-opengl', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-opengl', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-opengl', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-stb', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-stb', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-stb', version: '3.3.1', classifier: "natives-linux"
+
+    compile group: 'org.lwjgl', name: 'lwjgl-tinyfd', version: '3.3.1', classifier: "natives-windows"
+    // compile group: 'org.lwjgl', name: 'lwjgl-tinyfd', version: '3.3.1', classifier: "natives-osx"
+    compile group: 'org.lwjgl', name: 'lwjgl-tinyfd', version: '3.3.1', classifier: "natives-linux"
+}
+
+
+project(':mcp') {
+    apply plugin: 'net.minecraftforge.gradle.forgedev.mcp'
+    mcp {
+        config = minecraft_version + '-' + mcp_version
+        pipeline = 'joined'
+    }
+}
+
+evaluationDependsOn(':mcp')
+
+patcher {
+    parent = project(':mcp')
+    patchedSrc = file('src/main/java')
+    mappings channel: mappings_channel, version: mappings_version
+    mcVersion = minecraft_version
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'net.minecraft.client.main.Main',
+                'Multi-Release': 'true'
+        )
+    }
+    zip64 = true
+}
+
+
+
+if (project.hasProperty("args")) {
+    ext.cmdargs = project.getProperty("args")
+} else { 
+    ext.cmdargs = ""
+}
+task runclient(type: JavaExec) {
+    group = "MCP"
+    description = "Runs the client"
+    classpath sourceSets.main.runtimeClasspath
+    if (System.getProperty("os.name").toLowerCase().contains("mac")) {
+        jvmArgs '-XstartOnFirstThread'
+    }
+    if (System.getProperty("os.name").toLowerCase().contains("linux")) {
+        jvmArgs '-Xmx6G'
+    }
+    args '--gameDir', '.'
+    args '--version', minecraft_version
+    // args '--assetsDir', downloadAssets.output
+    // args '--assetIndex', "1.16"
+    args '--accessToken', '0'
+    args cmdargs.split()
+    main 'net.minecraft.client.main.Main'
+    workingDir 'run'
+}
+
+task setup() {
+    group = "MCP"
+    description = "Setups the dev workspace"
+    dependsOn ':extractMapped'
+    mkdir 'run/assets'
+    copy {
+        from downloadAssets.output.path
+        into 'run/assets'
+    }
+}
+
+task copyAssets {
+    group = "MCP"
+    description = "Download and place the assets into the run folder"
+    dependsOn ':downloadAssets'
+   mkdir 'run/assets'
+    copy {
+        from downloadAssets.output.path
+        into 'run/assets'
+    }
+}
+
+task createProperties(dependsOn: processResources) {
+  doLast {
+    new File("$buildDir/resources/main/version.properties").withWriter { w ->
+        Properties p = new Properties()
+        p['version'] = project.version.toString()
+        p.store w, null
+    }
+  }
+}
+
+classes {
+    dependsOn createProperties
+}
+
+shadowJar {
+    exclude "**/Log4j2Plugins.dat"
+}
+
+gradle.projectsEvaluated {
+    // compileJava target isn't available until after forge has initialized things
+    compileJava.dependsOn jaxb
+    jaxb.dependsOn copySchemas
+    copySchemas.dependsOn deleteSchemas
+}
+
+configurations {
+    jaxb
+}
+
+dependencies {
+    jaxb group: 'com.sun.xml.bind', name: 'jaxb-xjc', version: '2.2.4-1'
+}
+
+task copySchemas(type: Copy) {
+    from '../Malmo/Schemas/'
+    into 'src/main/resources/'
+    include ('*.xsd')
+}
+
+task jaxb() {
+    description 'Generate source files for our XML schemas using JAXB'
+
+    // Create an index file listing all the schemas:
+    def schemaIndexFile = new File('src/main/resources/schemas.index')
+    def contents = ""
+    def tree = copySchemas.source
+    tree.visit { fileDetails ->
+        contents += "${fileDetails.relativePath}" + "\n"
+    }
+    schemaIndexFile.write contents
+
+    inputs.files fileTree( dir: 'src/main/resources', include:'*.xsd' )
+    outputs.dir 'src/main/java/com/microsoft/Malmo/Schemas'
+    
+    doLast {
+        // first clear the old .java files out of the folder in case some are no longer current
+        delete fileTree(dir: 'src/main/java/com/microsoft/Malmo/Schemas', include: '*.java')
+
+        // use xjc to generate java files from the XML schema
+        ant.taskdef(name: 'xjc', classname: 'com.sun.tools.xjc.XJCTask', classpath: configurations.jaxb.asPath)
+        ant.xjc( destdir: 'src/main/java', package: 'com.microsoft.Malmo.Schemas' )
+        {
+            schema( dir: 'src/main/resources', includes: '*.xsd' )
+        }
+    }
+}
+
+task deleteSchemas() {
+    doLast {
+        // first clear the old .xsd files out of the folder in case some are no longer current
+        delete fileTree(dir: 'src/main/resources', include: '*.xsd')
+    }
+}

@@ -1,0 +1,4 @@
+rootProject.name = 'mcprec'
+
+include ':mcp'
+project(":mcp").projectDir = file("projects/mcp")

@@ -27,12 +27,13 @@ if [[ ! -d "$MCP_DIR" ]]; then
   exit 1
 fi
 
-PATCH_TARGET="$MCP_DIR" "$PYTHON_BIN" - <<'PY'
+PATCH_TARGET="$MCP_DIR" MINERL_TARGET="$MINERL_DIR" "$PYTHON_BIN" - <<'PY'
 from pathlib import Path
 import os
 import re
 
 mcp_dir = Path(os.environ["PATCH_TARGET"])
+minerl_dir = Path(os.environ["MINERL_TARGET"])
 
 
 def replace_method(text: str, signature: str, replacement: str) -> str:
@@ -65,19 +66,24 @@ def replace_method(text: str, signature: str, replacement: str) -> str:
 def update_file(path: Path, updater) -> None:
     old = path.read_text()
     new = updater(old)
+    try:
+        display_path = path.relative_to(minerl_dir)
+    except ValueError:
+        display_path = path
     if old != new:
         path.write_text(new)
-        print(f"patched {path.relative_to(mcp_dir)}")
+        print(f"patched {display_path}")
     else:
-        print(f"already patched {path.relative_to(mcp_dir)}")
+        print(f"already patched {display_path}")
 
 
 launch_client = mcp_dir / "launchClient.sh"
 build_gradle = mcp_dir / "build.gradle"
 main_window = mcp_dir / "src/main/java/net/minecraft/client/MainWindow.java"
 sound_engine = mcp_dir / "src/main/java/net/minecraft/client/audio/SoundEngine.java"
+human_play_interface = minerl_dir / "human_play_interface/human_play_interface.py"
 
-for path in (launch_client, build_gradle, main_window, sound_engine):
+for path in (launch_client, build_gradle, main_window, sound_engine, human_play_interface):
     if not path.exists():
         raise RuntimeError(f"Required file does not exist: {path}")
 
@@ -125,10 +131,36 @@ def patch_sound_engine(text: str) -> str:
     return replace_method(text, signature, replacement)
 
 
+def patch_human_play_interface(text: str) -> str:
+    early_state = (
+        "        self.pressed_keys = defaultdict(lambda: False)\n"
+        "        self.last_pov = None\n"
+        "        self.last_mouse_delta = [0, 0]\n"
+    )
+    if early_state in text:
+        return text
+
+    late_state = (
+        "\n"
+        "        self.last_pov = None\n"
+        "        self.last_mouse_delta = [0, 0]\n"
+    )
+    if late_state not in text:
+        raise RuntimeError("Could not find late HumanPlayInterface mouse state initialization")
+
+    text = text.replace(late_state, "\n", 1)
+    pressed_keys = "        self.pressed_keys = defaultdict(lambda: False)\n"
+    if pressed_keys not in text:
+        raise RuntimeError("Could not find HumanPlayInterface pressed_keys initialization")
+
+    return text.replace(pressed_keys, early_state, 1)
+
+
 update_file(launch_client, patch_launch_client)
 update_file(build_gradle, patch_build_gradle)
 update_file(main_window, patch_main_window)
 update_file(sound_engine, patch_sound_engine)
+update_file(human_play_interface, patch_human_play_interface)
 PY
 
 echo
@@ -137,6 +169,7 @@ grep -n "XstartOnFirstThread" "$MCP_DIR/launchClient.sh"
 grep -n "3.3.1" "$MCP_DIR/build.gradle" | head -n 3
 grep -nE "checkGlfwError|glfwSetWindowIcon" "$MCP_DIR/src/main/java/net/minecraft/client/MainWindow.java"
 grep -n "Sound engine disabled" "$MCP_DIR/src/main/java/net/minecraft/client/audio/SoundEngine.java"
+grep -n "last_mouse_delta" "$MINERL_DIR/human_play_interface/human_play_interface.py"
 
 echo
 echo "Rebuilding MineRL Minecraft runtime..."

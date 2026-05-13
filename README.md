@@ -49,6 +49,7 @@ It applies these fixes:
 - disable `MainWindow.checkGlfwError`
 - disable `GLFW.glfwSetWindowIcon`
 - disable Minecraft `SoundEngine` to avoid Apple Silicon `liblwjgl_stb.dylib` crashes in the audio thread
+- initialize `HumanPlayInterface` mouse state before pyglet dispatches window events
 
 The Python entrypoint also needs to set these before importing `HumanPlayInterface`; this repository's `main.py` already does it:
 
@@ -219,7 +220,30 @@ TypeError: a bytes-like object is required, not 'NoneType'
 
 That Python error means Minecraft crashed before replying to MineRL's mission init request.
 
-### 3.6 Check the edits
+### 3.6 Initialize `HumanPlayInterface` mouse state before event dispatch
+
+Manual edit:
+
+```text
+.venv/lib/python3.10/site-packages/minerl/human_play_interface/human_play_interface.py
+```
+
+Move these assignments above the `self.window.on_mouse_motion = self._on_mouse_motion` handler registration:
+
+```python
+self.last_pov = None
+self.last_mouse_delta = [0, 0]
+```
+
+This fixes:
+
+```text
+AttributeError: '_SingleAgentEnv' object has no attribute 'last_mouse_delta'
+```
+
+Pyglet can dispatch a mouse-move event during `HumanPlayInterface.__init__`. If that happens before `last_mouse_delta` exists on the wrapper, Gym delegates the missing attribute lookup to the wrapped MineRL environment and raises this error.
+
+### 3.7 Check the edits
 
 ```bash
 grep -n 'XstartOnFirstThread' \
@@ -229,11 +253,14 @@ grep -nE '3\.3\.1|checkGlfwError|glfwSetWindowIcon|Sound engine disabled' \
   .venv/lib/python3.10/site-packages/minerl/MCP-Reborn/build.gradle \
   .venv/lib/python3.10/site-packages/minerl/MCP-Reborn/src/main/java/net/minecraft/client/MainWindow.java \
   .venv/lib/python3.10/site-packages/minerl/MCP-Reborn/src/main/java/net/minecraft/client/audio/SoundEngine.java
+
+grep -n 'last_mouse_delta' \
+  .venv/lib/python3.10/site-packages/minerl/human_play_interface/human_play_interface.py
 ```
 
-These checks should show the patched launcher line, LWJGL `3.3.1`, the empty `checkGlfwError` method, the commented `glfwSetWindowIcon` call, and the disabled SoundEngine log message.
+These checks should show the patched launcher line, LWJGL `3.3.1`, the empty `checkGlfwError` method, the commented `glfwSetWindowIcon` call, the disabled SoundEngine log message, and early mouse state initialization.
 
-### 3.7 Rebuild the jar
+### 3.8 Rebuild the jar
 
 ```bash
 cd .venv/lib/python3.10/site-packages/minerl/MCP-Reborn
