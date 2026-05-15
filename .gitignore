@@ -9,3 +9,15 @@ wheels/
 # Virtual environments
 .venv
 logs/
+
+# MineRL/Minecraft generated files
+src/minerl/assets/MCP-Reborn/.gradle/
+src/minerl/assets/MCP-Reborn/build/
+src/minerl/assets/MCP-Reborn/crash-reports/
+src/minerl/assets/MCP-Reborn/logs/
+src/minerl/assets/MCP-Reborn/run/
+src/minerl/assets/MCP-Reborn/saves/
+src/minerl/assets/MCP-Reborn/usercache.json
+src/minerl/assets/MCP-Reborn/src/main/java/com/microsoft/Malmo/Schemas/*.java
+src/minerl/assets/MCP-Reborn/src/main/resources/*.xsd
+src/minerl/assets/MCP-Reborn/src/main/resources/schemas.index
