@@ -4,7 +4,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from minerl.runtime.assets import find_minecraft_dir
+from minerl.runtime.assets import find_minecraft_source_dir
 from minerl.tools.patch_minecraft import patch_minecraft_tree
 
 
@@ -14,11 +14,11 @@ def main(argv: list[str] | None = None) -> int:
         "--minecraft-dir",
         type=Path,
         default=None,
-        help="MCP-Reborn directory. Defaults to MINERL_MINECRAFT_DIR or packaged assets.",
+        help="MCP-Reborn source directory. Defaults to MINERL_MINECRAFT_DIR or packaged assets.",
     )
     parser.add_argument("--no-patch", action="store_true", help="Skip source compatibility patches")
     args = parser.parse_args(argv)
-    minecraft_dir = args.minecraft_dir or find_minecraft_dir()
+    minecraft_dir = args.minecraft_dir or find_minecraft_source_dir()
     if not args.no_patch:
         patch_minecraft_tree(minecraft_dir)
     subprocess.check_call(["./gradlew", "clean", "build", "shadowJar"], cwd=minecraft_dir)

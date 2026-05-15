@@ -15,14 +15,12 @@ dependencies = [
     "lxml>=5,<7",
     "numpy>=1.26,<3",
     "psutil>=6,<8",
+    "pyglet>=2,<3",
     "tqdm>=4.66,<5",
     "xmltodict>=0.15,<1",
 ]
 
 [project.optional-dependencies]
-human = [
-    "pyglet>=2,<3",
-]
 render = [
     "opencv-python-headless>=4.13,<5",
 ]

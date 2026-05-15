@@ -223,6 +223,7 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "psutil" },
+    { name = "pyglet" },
     { name = "tqdm" },
     { name = "xmltodict" },
 ]
@@ -231,9 +232,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
-]
-human = [
-    { name = "pyglet" },
 ]
 render = [
     { name = "opencv-python-headless" },
@@ -248,13 +246,13 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26,<3" },
     { name = "opencv-python-headless", marker = "extra == 'render'", specifier = ">=4.13,<5" },
     { name = "psutil", specifier = ">=6,<8" },
-    { name = "pyglet", marker = "extra == 'human'", specifier = ">=2,<3" },
+    { name = "pyglet", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8,<1" },
     { name = "tqdm", specifier = ">=4.66,<5" },
     { name = "xmltodict", specifier = ">=0.15,<1" },
 ]
-provides-extras = ["human", "render", "dev"]
+provides-extras = ["render", "dev"]
 
 [[package]]
 name = "numpy"
