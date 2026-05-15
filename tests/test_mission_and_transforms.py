@@ -50,11 +50,7 @@ def test_task_specific_mission_handlers_are_rendered() -> None:
 
 def test_representative_missions_validate_against_malmo_xsd() -> None:
     schema = etree.XMLSchema(
-        etree.parse(
-            str(
-                Path("src/minerl/assets/MCP-Reborn/src/main/resources/Mission.xsd")
-            )
-        )
+        etree.parse(str(Path("src/minerl/assets/Malmo/Schemas/Mission.xsd")))
     )
     for task_id in (
         "MineRLTreechop-v0",
